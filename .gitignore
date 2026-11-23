@@ -14,3 +14,5 @@
 !debug.keystore
 server/data/
 server/node_modules/
+
+.kotlin/
