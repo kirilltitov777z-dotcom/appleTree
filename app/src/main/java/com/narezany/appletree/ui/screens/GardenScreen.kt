@@ -89,7 +89,6 @@ fun GardenScreen(
     val p = store.profile
     val rev = store.rev
 
-    var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
     var time by remember { mutableLongStateOf(0L) }
     var floats by remember { mutableStateOf(listOf<FloatingText>()) }
     var levelUpTo by remember { mutableStateOf<Int?>(null) }
@@ -101,7 +100,6 @@ fun GardenScreen(
     LaunchedEffect(Unit) {
         while (true) {
             delay(60)
-            now = System.currentTimeMillis()
             time++
         }
     }
@@ -118,10 +116,6 @@ fun GardenScreen(
             floats = floats.filter { t - it.born < 900 }
         }
     }
-
-    val cdLeft = if (p.tapCooldownMs == 0L) 0f
-    else ((now - store.lastTapAt).toFloat() / p.tapCooldownMs).coerceIn(0f, 1f)
-    val ready = cdLeft >= 1f || store.lastTapAt == 0L
 
     Box(
         modifier = Modifier
@@ -195,7 +189,7 @@ fun GardenScreen(
                     growth = p.growth,
                     treeScale = 1f,
                     time = time / 10f,
-                    highlight = ready,
+                    highlight = false,
                     modifier = Modifier
                         .fillMaxSize()
                         .graphicsLayer {
@@ -257,7 +251,7 @@ fun GardenScreen(
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
                     Text(
-                        if (ready) "нажми на дерево" else "собираем…",
+                        "нажми на дерево — задержки больше нет",
                         fontSize = 12.sp,
                         color = Color(0xCC4E6B62)
                     )
@@ -285,16 +279,12 @@ fun GardenScreen(
                     Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
-                    Text("Задержка сбора", fontSize = 11.sp, color = InkSoft)
-                    Text(
-                        if (ready) "готово" else "${(p.tapCooldownMs * (1 - cdLeft) / 1000f).let { String.format("%.1f", it) }} с",
-                        fontSize = 11.sp,
-                        color = if (ready) LeafDeep else InkSoft
-                    )
+                    Text("Удача · крит ×2", fontSize = 11.sp, color = InkSoft)
+                    Text("${p.critChance}%", fontSize = 11.sp, color = LeafDeep, fontWeight = FontWeight.SemiBold)
                 }
                 Spacer(Modifier.height(5.dp))
                 LongBar(
-                    cdLeft,
+                    p.critChance / 60f,
                     height = 7,
                     colors = listOf(Color(0xFFD9A46A), Color(0xFFC98A55))
                 )
@@ -306,7 +296,10 @@ fun GardenScreen(
                     MiniStat("🍎 за нажатие", "+${fmt(p.tapValue)}", Modifier.weight(1f))
                     MiniStat(
                         "🧺 в секунду",
-                        if (p.gardenerPerSec > 0) "+${String.format("%.1f", p.gardenerPerSec)}" else "—",
+                        run {
+                            val total = p.gardenerPerSec + store.regionBonusPerSec()
+                            if (total > 0) "+${String.format("%.1f", total)}" else "—"
+                        },
                         Modifier.weight(1f)
                     )
                     if (p.boostActive) {

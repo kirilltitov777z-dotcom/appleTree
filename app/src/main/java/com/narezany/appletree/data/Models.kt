@@ -36,9 +36,9 @@ data class Upgrades(
 
 enum class UpgradeKind(val title: String, val desc: String, val icon: String) {
     TAP_POWER("Сила сбора", "Больше яблок за одно нажатие", "🍎"),
-    TAP_SPEED("Ловкость", "Короче задержка между нажатиями", "⚡"),
+    TAP_SPEED("Удача", "Чаще выпадает критический урожай ×2", "⚡"),
     GARDENER("Садовник", "Собирает яблоки, пока ты отдыхаешь", "🧺"),
-    GROWTH("Удобрение", "Полоска роста заполняется быстрее", "🌱"),
+    GROWTH("Удобрение", "Дерево растёт быстрее", "🌱"),
     PRESS("Пресс", "Выгоднее продавать яблоки", "🪙"),
 }
 
@@ -68,41 +68,44 @@ data class Profile(
     var vibration: Boolean = true,
     var tutorialDone: Boolean = false,
 ) {
-    val tapCooldownMs: Long
-        get() = (320L - upgrades.tapSpeed * 18L).coerceAtLeast(90L)
+    /** Задержки больше нет — можно жать на дерево как угодно часто. */
+    val tapCooldownMs: Long get() = 0L
+
+    val critChance: Int
+        get() = (6 + upgrades.tapSpeed * 5).coerceAtMost(60)
 
     val tapValue: Long
-        get() = ((1 + upgrades.tapPower * 2) * (1f + (level - 1) * 0.06f)).toLong()
+        get() = ((2 + upgrades.tapPower * 3) * (1f + (level - 1) * 0.08f)).toLong()
             .coerceAtLeast(1)
 
     val gardenerPerSec: Double
-        get() = upgrades.gardener * 0.6 * (1.0 + upgrades.gardener * 0.05)
+        get() = upgrades.gardener * 1.2 * (1.0 + upgrades.gardener * 0.08)
 
     val growthPerTap: Float
-        get() = 0.035f * (1f + upgrades.growth * 0.22f)
+        get() = 0.06f * (1f + upgrades.growth * 0.3f)
 
     val growthNeeded: Float get() = 1f
 
     val coinsPerApple: Double
-        get() = 0.08 * (1.0 + upgrades.press * 0.35)
+        get() = 0.12 * (1.0 + upgrades.press * 0.45)
 
     val boostActive: Boolean get() = boostUntil > System.currentTimeMillis()
 
     fun costOf(kind: UpgradeKind): Long {
         val lvl = levelOf(kind)
         val base = when (kind) {
-            UpgradeKind.TAP_POWER -> 30.0
-            UpgradeKind.TAP_SPEED -> 45.0
-            UpgradeKind.GARDENER -> 70.0
-            UpgradeKind.GROWTH -> 40.0
-            UpgradeKind.PRESS -> 55.0
+            UpgradeKind.TAP_POWER -> 12.0
+            UpgradeKind.TAP_SPEED -> 18.0
+            UpgradeKind.GARDENER -> 25.0
+            UpgradeKind.GROWTH -> 16.0
+            UpgradeKind.PRESS -> 20.0
         }
         val factor = when (kind) {
-            UpgradeKind.TAP_POWER -> 1.55
-            UpgradeKind.TAP_SPEED -> 1.62
-            UpgradeKind.GARDENER -> 1.7
-            UpgradeKind.GROWTH -> 1.5
-            UpgradeKind.PRESS -> 1.6
+            UpgradeKind.TAP_POWER -> 1.35
+            UpgradeKind.TAP_SPEED -> 1.42
+            UpgradeKind.GARDENER -> 1.45
+            UpgradeKind.GROWTH -> 1.32
+            UpgradeKind.PRESS -> 1.38
         }
         return (base * factor.pow(lvl)).toLong().coerceAtLeast(1)
     }
@@ -230,11 +233,25 @@ data class Region(
     var ownerColor: String? = null,
     var progressCountryId: String? = null,
     var progress: Int = 0, // 0..100
+    var level: Int = 1,
+    var invested: Long = 0,
+    val bonus: String = "🍎",
     // координаты доли в процентах от области карты
     val x: Float,
     val y: Float,
     val r: Float,
 ) {
+    /** Бонус региона в яблоках в секунду (только для владельца). */
+    val bonusPerSec: Double get() = level * 0.5
+
+    val bonusName: String
+        get() = when (bonus) {
+            "🪙" -> "монеты"
+            "⚡" -> "урожай"
+            "🌿" -> "рост"
+            else -> "яблоки"
+        }
+
     fun toJson() = JSONObject()
         .put("id", id)
         .put("name", name)
@@ -243,6 +260,9 @@ data class Region(
         .put("ownerColor", ownerColor ?: JSONObject.NULL)
         .put("progressCountryId", progressCountryId ?: JSONObject.NULL)
         .put("progress", progress)
+        .put("level", level)
+        .put("invested", invested)
+        .put("bonus", bonus)
         .put("x", x.toDouble())
         .put("y", y.toDouble())
         .put("r", r.toDouble())
@@ -256,9 +276,37 @@ data class Region(
             ownerColor = if (o.isNull("ownerColor")) null else o.optString("ownerColor"),
             progressCountryId = if (o.isNull("progressCountryId")) null else o.optString("progressCountryId"),
             progress = o.optInt("progress"),
+            level = o.optInt("level", 1).coerceAtLeast(1),
+            invested = o.optLong("invested"),
+            bonus = o.optString("bonus", "🍎"),
             x = o.optDouble("x", 50.0).toFloat(),
             y = o.optDouble("y", 50.0).toFloat(),
             r = o.optDouble("r", 10.0).toFloat(),
+        )
+    }
+}
+
+data class ChatMessage(
+    val id: String,
+    val countryId: String,
+    val nickname: String,
+    val text: String,
+    val createdAt: Long = System.currentTimeMillis(),
+) {
+    fun toJson() = JSONObject()
+        .put("id", id)
+        .put("countryId", countryId)
+        .put("nickname", nickname)
+        .put("text", text)
+        .put("createdAt", createdAt)
+
+    companion object {
+        fun fromJson(o: JSONObject) = ChatMessage(
+            id = o.optString("id"),
+            countryId = o.optString("countryId"),
+            nickname = o.optString("nickname"),
+            text = o.optString("text"),
+            createdAt = o.optLong("createdAt", System.currentTimeMillis()),
         )
     }
 }
@@ -297,12 +345,14 @@ data class GameState(
     var regions: MutableList<Region> = mutableListOf(),
     var applications: MutableList<Application> = mutableListOf(),
     var leaderboard: MutableList<Country> = mutableListOf(),
+    var chat: MutableList<ChatMessage> = mutableListOf(),
 ) {
     fun toJson(): JSONObject = JSONObject()
         .put("profile", profile.toJson())
         .put("countries", JSONArray(countries.map { it.toJson() }))
         .put("regions", JSONArray(regions.map { it.toJson() }))
         .put("leaderboard", JSONArray(leaderboard.map { it.toJson() }))
+        .put("chat", JSONArray(chat.map { it.toJson() }))
 
     companion object {
         fun fromJson(o: JSONObject): GameState {
@@ -318,29 +368,34 @@ data class GameState(
             o.optJSONArray("leaderboard")?.let { arr ->
                 for (i in 0 until arr.length()) lb += Country.fromJson(arr.getJSONObject(i))
             }
+            val chat = mutableListOf<ChatMessage>()
+            o.optJSONArray("chat")?.let { arr ->
+                for (i in 0 until arr.length()) chat += ChatMessage.fromJson(arr.getJSONObject(i))
+            }
             return GameState(
                 profile = o.optJSONObject("profile")?.let { Profile.fromJson(it) } ?: Profile(),
                 countries = countries,
                 regions = regions.ifEmpty { defaultRegions() },
                 leaderboard = lb,
+                chat = chat,
             )
         }
     }
 }
 
 fun defaultRegions(): MutableList<Region> = mutableListOf(
-    Region("north", "Северный сад", x = 30f, y = 18f, r = 13f),
-    Region("pine", "Сосновый край", x = 62f, y = 15f, r = 11f),
-    Region("lake", "Озёрный берег", x = 82f, y = 30f, r = 12f),
-    Region("valley", "Тихая долина", x = 18f, y = 40f, r = 14f),
-    Region("orchard", "Большой сад", x = 45f, y = 38f, r = 15f),
-    Region("hills", "Яблочные холмы", x = 72f, y = 48f, r = 13f),
-    Region("river", "Речные луга", x = 25f, y = 62f, r = 14f),
-    Region("field", "Пшеничные поля", x = 52f, y = 63f, r = 13f),
-    Region("coast", "Тёплый берег", x = 80f, y = 68f, r = 12f),
-    Region("south", "Южная роща", x = 33f, y = 82f, r = 12f),
-    Region("meadow", "Медовый луг", x = 60f, y = 86f, r = 13f),
-    Region("cape", "Мыс Ветров", x = 86f, y = 87f, r = 10f),
+    Region("north", "Северный сад", x = 30f, y = 18f, r = 13f, bonus = "🍎"),
+    Region("pine", "Сосновый край", x = 62f, y = 15f, r = 11f, bonus = "🌿"),
+    Region("lake", "Озёрный берег", x = 82f, y = 30f, r = 12f, bonus = "🪙"),
+    Region("valley", "Тихая долина", x = 18f, y = 40f, r = 14f, bonus = "🍎"),
+    Region("orchard", "Большой сад", x = 45f, y = 38f, r = 15f, bonus = "⚡"),
+    Region("hills", "Яблочные холмы", x = 72f, y = 48f, r = 13f, bonus = "🍎"),
+    Region("river", "Речные луга", x = 25f, y = 62f, r = 14f, bonus = "🪙"),
+    Region("field", "Пшеничные поля", x = 52f, y = 63f, r = 13f, bonus = "🌿"),
+    Region("coast", "Тёплый берег", x = 80f, y = 68f, r = 12f, bonus = "🪙"),
+    Region("south", "Южная роща", x = 33f, y = 82f, r = 12f, bonus = "🍎"),
+    Region("meadow", "Медовый луг", x = 60f, y = 86f, r = 13f, bonus = "🌿"),
+    Region("cape", "Мыс Ветров", x = 86f, y = 87f, r = 10f, bonus = "⚡"),
 )
 
 val COUNTRY_COLORS = listOf(

@@ -143,6 +143,20 @@ fun ProfileScreen(store: GameStore, onLogout: () -> Unit) {
 
         Spacer(Modifier.height(10.dp))
         SoftCard {
+            Text("Лёгкий режим · 1.0", fontWeight = FontWeight.SemiBold, fontSize = 16.sp, color = Ink)
+            Spacer(Modifier.height(6.dp))
+            Text(
+                "Задержки нажатий нет, улучшения дешевле, дерево растёт быстрее. " +
+                    "Захваченные регионы приносят бонусы и улучшаются до 10 уровня. " +
+                    "В «Странах» есть чат твоей страны.",
+                fontSize = 11.sp,
+                color = InkSoft,
+                lineHeight = 16.sp
+            )
+        }
+
+        Spacer(Modifier.height(10.dp))
+        SoftCard {
             Text("Сеть", fontWeight = FontWeight.SemiBold, fontSize = 16.sp, color = Ink)
             Text(
                 if (store.onlineEnabled) "подключено как ${p.serverNickname ?: p.nickname}"
@@ -154,7 +168,7 @@ fun ProfileScreen(store: GameStore, onLogout: () -> Unit) {
                 value = serverUrl,
                 onValueChange = { serverUrl = it },
                 label = { Text("Адрес сервера") },
-                placeholder = { Text("http://192.168.1.5:8080") },
+                placeholder = { Text("https://...supabase.co") },
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(14.dp),

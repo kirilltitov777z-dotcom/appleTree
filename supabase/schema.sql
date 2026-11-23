@@ -45,34 +45,50 @@ create table if not exists public.regions (
   owner_name text,
   owner_color text,
   progress int not null default 0,
-  progress_country_id uuid
+  progress_country_id uuid,
+  level int not null default 1,
+  invested bigint not null default 0,
+  bonus text not null default '🍎'
 );
 
-insert into public.regions (id, name, x, y, r) values
-  ('north',   'Северный сад',    30, 18, 13),
-  ('pine',    'Сосновый край',   62, 15, 11),
-  ('lake',    'Озёрный берег',   82, 30, 12),
-  ('valley',  'Тихая долина',    18, 40, 14),
-  ('orchard', 'Большой сад',     45, 38, 15),
-  ('hills',   'Яблочные холмы',  72, 48, 13),
-  ('river',   'Речные луга',     25, 62, 14),
-  ('field',   'Пшеничные поля',  52, 63, 13),
-  ('coast',   'Тёплый берег',    80, 68, 12),
-  ('south',   'Южная роща',      33, 82, 12),
-  ('meadow',  'Медовый луг',     60, 86, 13),
-  ('cape',    'Мыс Ветров',      86, 87, 10)
-on conflict (id) do nothing;
+alter table public.regions add column if not exists level int not null default 1;
+alter table public.regions add column if not exists invested bigint not null default 0;
+alter table public.regions add column if not exists bonus text not null default '🍎';
+
+create table if not exists public.chat (
+  id uuid primary key default gen_random_uuid(),
+  country_id uuid not null references public.countries(id) on delete cascade,
+  nickname text not null,
+  text text not null,
+  created_at bigint not null default 0
+);
+
+insert into public.regions (id, name, x, y, r, bonus) values
+  ('north',   'Северный сад',    30, 18, 13, '🍎'),
+  ('pine',    'Сосновый край',   62, 15, 11, '🌿'),
+  ('lake',    'Озёрный берег',   82, 30, 12, '🪙'),
+  ('valley',  'Тихая долина',    18, 40, 14, '🍎'),
+  ('orchard', 'Большой сад',     45, 38, 15, '⚡'),
+  ('hills',   'Яблочные холмы',  72, 48, 13, '🍎'),
+  ('river',   'Речные луга',     25, 62, 14, '🪙'),
+  ('field',   'Пшеничные поля',  52, 63, 13, '🌿'),
+  ('coast',   'Тёплый берег',    80, 68, 12, '🪙'),
+  ('south',   'Южная роща',      33, 82, 12, '🍎'),
+  ('meadow',  'Медовый луг',     60, 86, 13, '🌿'),
+  ('cape',    'Мыс Ветров',      86, 87, 10, '⚡')
+on conflict (id) do update set bonus = excluded.bonus;
 
 -- Доступ для приложения (publishable/anon ключ).
 alter table public.countries    enable row level security;
 alter table public.players      enable row level security;
 alter table public.applications enable row level security;
 alter table public.regions      enable row level security;
+alter table public.chat         enable row level security;
 
 do $$
 declare t text;
 begin
-  foreach t in array array['countries','players','applications','regions'] loop
+  foreach t in array array['countries','players','applications','regions','chat'] loop
     execute format('drop policy if exists anon_select on public.%I', t);
     execute format('drop policy if exists anon_insert on public.%I', t);
     execute format('drop policy if exists anon_update on public.%I', t);

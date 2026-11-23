@@ -234,6 +234,7 @@ class GameStore(private val context: Context) {
 
     fun tapCooldownLeft(): Float {
         val cd = profile.tapCooldownMs
+        if (cd <= 0L) return 0f
         val passed = System.currentTimeMillis() - lastTapAt
         return (1f - passed.toFloat() / cd).coerceIn(0f, 1f)
     }
@@ -252,7 +253,7 @@ class GameStore(private val context: Context) {
             p.level++
             leveled = true
         }
-        val crit = Random.nextInt(100) < 6
+        val crit = Random.nextInt(100) < p.critChance
         if (crit) p.addApples(gained)
         p.lastSeen = System.currentTimeMillis()
         save()
@@ -295,8 +296,9 @@ class GameStore(private val context: Context) {
     fun applyOfflineIncome(p: Profile) {
         val now = System.currentTimeMillis()
         val seconds = ((now - p.lastSeen) / 1000).coerceIn(0, 8 * 3600)
-        if (p.upgrades.gardener > 0 && seconds > 60) {
-            val earned = (p.gardenerPerSec * seconds).toLong()
+        val perSec = p.gardenerPerSec + regionBonusPerSec()
+        if (perSec > 0 && seconds > 60) {
+            val earned = (perSec * seconds).toLong()
             p.addApples(earned)
         }
         p.lastSeen = now
@@ -424,9 +426,15 @@ class GameStore(private val context: Context) {
     // ---------- карта ----------
 
     fun captureCost(region: Region): Long {
-        val base = 120L + profile.level * 25L
-        return if (region.ownerId == null) base else base * 2
+        val base = 60L + profile.level * 12L
+        return if (region.ownerId == null) base else (base * 1.5).toLong()
     }
+
+    fun developCost(region: Region): Long = 60L * region.level * region.level
+
+    /** Бонус захваченных земель: яблоки в секунду. */
+    fun regionBonusPerSec(): Double =
+        state.regions.filter { it.ownerId == profile.countryId }.sumOf { it.bonusPerSec }
 
     fun captureRegion(regionId: String): CaptureResult {
         val p = profile
@@ -459,6 +467,23 @@ class GameStore(private val context: Context) {
         country.score += cost / 2
         save()
         return CaptureResult(false, "Захват: ${region.progress}%")
+    }
+
+    /** Прокачка своей территории: дороже, но даёт больше бонуса. */
+    fun developRegion(regionId: String): String {
+        val country = myCountry ?: return "Сначала вступи в страну"
+        val region = state.regions.firstOrNull { it.id == regionId }
+            ?: return "Регион не найден"
+        if (region.ownerId != country.id) return "Развивать можно только свою землю"
+        if (region.level >= 10) return "Это максимальный уровень региона"
+        val cost = developCost(region)
+        if (profile.apples < cost) return "Нужно $cost 🍎"
+        profile.apples -= cost
+        region.invested += cost
+        region.level++
+        country.score += cost
+        save()
+        return "${region.name} улучшен до ур. ${region.level} · +${region.bonus} бонус"
     }
 
     data class CaptureResult(val captured: Boolean, val message: String)
@@ -592,10 +617,75 @@ class GameStore(private val context: Context) {
         runCatching { api().pushScore(token, profile.totalApples, profile.captured) }
     }
 
+    // ---------- чат страны ----------
+
+    fun sendChat(text: String): String? {
+        val countryId = profile.countryId ?: return "Сначала вступи в страну"
+        val clean = text.trim().take(300)
+        if (clean.isEmpty()) return "Напиши сообщение"
+        state.chat += ChatMessage(
+            id = UUID.randomUUID().toString(),
+            countryId = countryId,
+            nickname = profile.nickname,
+            text = clean,
+        )
+        if (state.chat.size > 100) {
+            state.chat.removeAll(state.chat.take(state.chat.size - 100).toSet())
+        }
+        save()
+        return null
+    }
+
+    suspend fun sendChatOnline(text: String): String? {
+        val local = sendChat(text)
+        if (local != null) return local
+        val token = profile.serverToken ?: return null
+        val countryId = profile.countryId ?: return null
+        return try {
+            api().sendChat(token, countryId, text.trim().take(300))
+            null
+        } catch (e: Exception) {
+            e.message
+        }
+    }
+
+    suspend fun loadChatOnline(): String? {
+        val token = profile.serverToken ?: return null
+        val countryId = profile.countryId ?: return null
+        return try {
+            val list = api().chat(token, countryId, 100)
+            if (list.isNotEmpty()) {
+                state.chat = list.toMutableList()
+                save()
+            }
+            null
+        } catch (e: Exception) {
+            e.message
+        }
+    }
+
+    suspend fun developRegionOnline(regionId: String): String {
+        val local = developRegion(regionId)
+        if (local.startsWith("Сначала") || local.startsWith("Регион") ||
+            local.startsWith("Развивать") || local.startsWith("максимальный") ||
+            local.startsWith("Нужно")
+        ) return local
+        val token = profile.serverToken ?: return local
+        return try {
+            val r = state.regions.first { it.id == regionId }
+            api().developRegion(token, regionId, r.level, r.invested)
+            local
+        } catch (e: Exception) {
+            e.message ?: local
+        }
+    }
+
     fun tick(seconds: Int = 1) {
         val p = profile
-        if (p.upgrades.gardener > 0) {
-            val gain = (p.gardenerPerSec * seconds * (if (p.boostActive) 2 else 1)).toLong()
+        val bonus = regionBonusPerSec()
+        val gardener = p.gardenerPerSec + if (bonus > 0) bonus else 0.0
+        if (gardener > 0) {
+            val gain = (gardener * seconds * (if (p.boostActive) 2 else 1)).toLong()
             if (gain > 0) {
                 p.addApples(gain)
                 p.lastSeen = System.currentTimeMillis()

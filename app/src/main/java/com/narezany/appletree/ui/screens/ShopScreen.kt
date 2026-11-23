@@ -183,7 +183,7 @@ fun ShopScreen(store: GameStore) {
             )
 
             UpgradeKind.entries.forEach { kind ->
-                UpgradeCard(store = store, kind = kind, onBought = { ok ->
+                UpgradeCard(store = store, kind = kind, rev = rev, onBought = { ok ->
                     notice = if (ok) "${kind.title}: уровень ${store.profile.levelOf(kind)}"
                     else "Не хватает монет — продай яблоки"
                 })
@@ -196,7 +196,7 @@ fun ShopScreen(store: GameStore) {
                 Spacer(Modifier.height(6.dp))
                 Text(
                     "• «Сила сбора» — больше яблок за нажатие\n" +
-                        "• «Ловкость» — короче задержка между нажатиями\n" +
+                        "• «Удача» — чаще крит ×2 (задержки больше нет)\n" +
                         "• «Садовник» — собирает яблоки сам, даже когда игра закрыта\n" +
                         "• «Удобрение» — быстрее заполняется полоска роста\n" +
                         "• «Пресс» — выгоднее продавать урожай",
@@ -215,7 +215,8 @@ fun ShopScreen(store: GameStore) {
 }
 
 @Composable
-private fun UpgradeCard(store: GameStore, kind: UpgradeKind, onBought: (Boolean) -> Unit) {
+private fun UpgradeCard(store: GameStore, kind: UpgradeKind, rev: Int, onBought: (Boolean) -> Unit) {
+    // rev в параметрах заставляет карточку пересчитать цену и цвет после покупки
     val p = store.profile
     val level = p.levelOf(kind)
     val cost = p.costOf(kind)
@@ -264,7 +265,7 @@ private fun effectText(store: GameStore, kind: UpgradeKind): String {
     val p = store.profile
     return when (kind) {
         UpgradeKind.TAP_POWER -> "сейчас: +${fmt(p.tapValue)} за нажатие"
-        UpgradeKind.TAP_SPEED -> "задержка: ${p.tapCooldownMs} мс"
+        UpgradeKind.TAP_SPEED -> "критический урожай: ${p.critChance}%"
         UpgradeKind.GARDENER -> "сейчас: +${String.format("%.1f", p.gardenerPerSec)} яблок/с"
         UpgradeKind.GROWTH -> "полоска: +${String.format("%.1f", p.growthPerTap * 100)}% за нажатие"
         UpgradeKind.PRESS -> "курс: ${String.format("%.2f", p.coinsPerApple)} 🪙 за яблоко"

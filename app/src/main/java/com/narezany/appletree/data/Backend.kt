@@ -36,6 +36,9 @@ interface Backend {
     suspend fun capture(token: String, regionId: String, amount: Long): JSONObject
     suspend fun pushScore(token: String, score: Long, captured: Int)
     suspend fun leaderboard(token: String?): List<Country>
+    suspend fun sendChat(token: String, countryId: String, text: String)
+    suspend fun chat(token: String, countryId: String, limit: Int): List<ChatMessage>
+    suspend fun developRegion(token: String, regionId: String, level: Int, invested: Long)
 }
 
 fun backendFor(url: String): Backend {

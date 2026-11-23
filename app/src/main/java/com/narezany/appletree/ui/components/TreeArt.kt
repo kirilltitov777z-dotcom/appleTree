@@ -29,22 +29,26 @@ import kotlin.math.sin
 private data class AppleSpot(val angle: Float, val radius: Float, val size: Float, val gold: Boolean = false)
 
 private val appleSpots = listOf(
-    AppleSpot(-2.55f, 0.62f, 0.030f),
-    AppleSpot(-2.05f, 0.82f, 0.028f),
-    AppleSpot(-1.55f, 0.55f, 0.030f, true),
-    AppleSpot(-1.15f, 0.90f, 0.027f),
-    AppleSpot(-0.70f, 0.66f, 0.030f),
-    AppleSpot(-0.30f, 0.88f, 0.026f),
-    AppleSpot(0.12f, 0.58f, 0.029f),
-    AppleSpot(0.45f, 0.86f, 0.027f, true),
-    AppleSpot(0.85f, 0.62f, 0.030f),
-    AppleSpot(1.25f, 0.90f, 0.026f),
-    AppleSpot(1.60f, 0.55f, 0.029f),
-    AppleSpot(2.00f, 0.80f, 0.027f),
-    AppleSpot(2.45f, 0.60f, 0.028f),
-    AppleSpot(2.85f, 0.84f, 0.025f),
-    AppleSpot(3.30f, 0.62f, 0.028f, true),
-    AppleSpot(3.75f, 0.88f, 0.025f),
+    AppleSpot(-2.55f, 0.60f, 0.075f),
+    AppleSpot(-2.05f, 0.78f, 0.070f),
+    AppleSpot(-1.55f, 0.52f, 0.078f, true),
+    AppleSpot(-1.15f, 0.88f, 0.068f),
+    AppleSpot(-0.70f, 0.62f, 0.076f),
+    AppleSpot(-0.30f, 0.86f, 0.066f),
+    AppleSpot(0.12f, 0.55f, 0.078f),
+    AppleSpot(0.45f, 0.84f, 0.070f, true),
+    AppleSpot(0.85f, 0.60f, 0.076f),
+    AppleSpot(1.25f, 0.88f, 0.066f),
+    AppleSpot(1.60f, 0.52f, 0.075f),
+    AppleSpot(2.00f, 0.78f, 0.070f),
+    AppleSpot(2.45f, 0.58f, 0.076f),
+    AppleSpot(2.85f, 0.82f, 0.066f),
+    AppleSpot(3.30f, 0.60f, 0.075f, true),
+    AppleSpot(3.75f, 0.86f, 0.066f),
+    AppleSpot(-2.30f, 0.40f, 0.070f),
+    AppleSpot(-0.90f, 0.38f, 0.068f),
+    AppleSpot(0.65f, 0.40f, 0.072f),
+    AppleSpot(2.20f, 0.38f, 0.068f),
 )
 
 @Composable
@@ -157,13 +161,15 @@ fun DrawScope.drawTree(
         center = Offset(crownCx - crownR * 0.42f, crownCy - crownR * 0.45f)
     )
 
-    // яблоки
-    val visible = (4 + stage / 2 + (growth * 4).toInt()).coerceIn(4, appleSpots.size)
+    // яблоки — крупные и всегда видны на фоне кроны
+    val visible = (7 + stage / 2 + (growth * 5).toInt()).coerceIn(7, appleSpots.size)
     appleSpots.take(visible).forEachIndexed { i, spot ->
         val wobble = sin(time * 1.4f + i * 0.8f) * crownR * 0.012f
-        val ax = crownCx + cos(spot.angle) * crownR * spot.radius * 1.55f
-        val ay = crownCy + sin(spot.angle) * crownR * spot.radius * 0.95f + crownR * 0.10f + wobble
-        drawApple(Offset(ax, ay), crownR * spot.size, spot.gold)
+        val ax = crownCx + cos(spot.angle) * crownR * spot.radius * 1.05f
+        val ay = crownCy + sin(spot.angle) * crownR * spot.radius * 0.85f + crownR * 0.12f + wobble
+        val r = crownR * spot.size
+        drawCircle(Color(0x33000000), r * 1.12f, Offset(ax + r * 0.12f, ay + r * 0.16f))
+        drawApple(Offset(ax, ay), r, spot.gold)
     }
 
     // трава у корней

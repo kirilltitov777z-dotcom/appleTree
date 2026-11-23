@@ -78,7 +78,7 @@ class SupabaseBackend(private val baseUrl: String, private val key: String) : Ba
     private val countryCols = "id,name,color,emblem,leader,members,score,regions"
     private val regionCols =
         "id,name,x,y,r,ownerId:owner_id,ownerName:owner_name,ownerColor:owner_color," +
-            "progress,progressCountryId:progress_country_id"
+            "progress,progressCountryId:progress_country_id,level,invested,bonus"
 
     private fun region(o: JSONObject) = Region.fromJson(o)
 
@@ -351,4 +351,47 @@ class SupabaseBackend(private val baseUrl: String, private val key: String) : Ba
     override suspend fun leaderboard(token: String?): List<Country> = withContext(Dispatchers.IO) {
         objects(get("/countries?select=$countryCols&order=score.desc&limit=50")).map(::country)
     }
+
+    override suspend fun sendChat(token: String, countryId: String, text: String) =
+        withContext(Dispatchers.IO) {
+            val player = me(token) ?: throw ApiException("Сессия истекла — войди заново")
+            val body = JSONObject()
+                .put("country_id", countryId)
+                .put("nickname", player.optString("nickname"))
+                .put("text", text.take(300))
+                .put("created_at", System.currentTimeMillis())
+            call("POST", "/chat", body)
+            Unit
+        }
+
+    override suspend fun chat(token: String, countryId: String, limit: Int): List<ChatMessage> =
+        withContext(Dispatchers.IO) {
+            objects(
+                get("/chat?country_id=eq.${encode(countryId)}&select=*&order=created_at.asc&limit=$limit")
+            ).map { o ->
+                ChatMessage(
+                    id = o.optString("id"),
+                    countryId = o.optString("country_id"),
+                    nickname = o.optString("nickname"),
+                    text = o.optString("text"),
+                    createdAt = o.optLong("created_at", System.currentTimeMillis()),
+                )
+            }
+        }
+
+    override suspend fun developRegion(token: String, regionId: String, level: Int, invested: Long) =
+        withContext(Dispatchers.IO) {
+            val player = me(token) ?: throw ApiException("Сессия истекла — войди заново")
+            val countryId = player.optString("country_id")
+            val rRow = objects(get("/regions?id=eq.${encode(regionId)}&select=$regionCols&limit=1"))
+                .firstOrNull() ?: throw ApiException("Регион не найден")
+            if (rRow.isNull("ownerId") || rRow.optString("ownerId") != countryId) {
+                throw ApiException("Развивать можно только свою землю")
+            }
+            call(
+                "PATCH", "/regions?id=eq.${encode(regionId)}",
+                JSONObject().put("level", level).put("invested", invested)
+            )
+            Unit
+        }
 }

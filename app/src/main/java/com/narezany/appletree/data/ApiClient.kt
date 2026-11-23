@@ -170,4 +170,32 @@ class ApiClient(private val baseUrl: String) : Backend {
         }
         out
     }
+
+    override suspend fun sendChat(token: String, countryId: String, text: String) =
+        withContext(Dispatchers.IO) {
+            request(
+                "POST", "/api/chat",
+                JSONObject().put("countryId", countryId).put("text", text), token
+            )
+            Unit
+        }
+
+    override suspend fun chat(token: String, countryId: String, limit: Int): List<ChatMessage> =
+        withContext(Dispatchers.IO) {
+            val r = request("GET", "/api/chat?countryId=${encode(countryId)}&limit=$limit", token = token)
+            val out = mutableListOf<ChatMessage>()
+            r.optJSONArray("messages")?.let { arr ->
+                for (i in 0 until arr.length()) out += ChatMessage.fromJson(arr.getJSONObject(i))
+            }
+            out
+        }
+
+    override suspend fun developRegion(token: String, regionId: String, level: Int, invested: Long) =
+        withContext(Dispatchers.IO) {
+            request(
+                "POST", "/api/develop",
+                JSONObject().put("regionId", regionId).put("level", level).put("invested", invested), token
+            )
+            Unit
+        }
 }

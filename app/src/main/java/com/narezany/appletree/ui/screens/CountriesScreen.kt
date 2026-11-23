@@ -91,6 +91,7 @@ fun CountriesScreen(store: GameStore) {
         if (store.onlineEnabled) {
             refreshing = true
             reason = store.refreshWorld()
+            store.loadChatOnline()
             refreshing = false
         }
     }
@@ -168,6 +169,7 @@ fun CountriesScreen(store: GameStore) {
         ) {
             SegTab("Страны", tab == 0, Modifier.weight(1f)) { tab = 0 }
             SegTab("Карта", tab == 1, Modifier.weight(1f)) { tab = 1 }
+            SegTab("Чат", tab == 3, Modifier.weight(1f)) { tab = 3 }
             SegTab("Заявки", tab == 2, Modifier.weight(1f)) { tab = 2 }
         }
 
@@ -207,7 +209,8 @@ fun CountriesScreen(store: GameStore) {
                         }
                     },
                     onOpenMap = { tab = 1 },
-                    onOpenApps = { tab = 2 }
+                    onOpenApps = { tab = 2 },
+                    onOpenChat = { tab = 3 }
                 )
                 1 -> MapTab(
                     store = store,
@@ -225,7 +228,33 @@ fun CountriesScreen(store: GameStore) {
                         }
                     },
                     busy = busy,
-                    online = store.onlineEnabled
+                    online = store.onlineEnabled,
+                    onDevelop = { r ->
+                        scope.launch {
+                            busy = true
+                            toast = if (store.onlineEnabled) store.developRegionOnline(r.id)
+                            else store.developRegion(r.id)
+                            busy = false
+                        }
+                    }
+                )
+                3 -> ChatTab(
+                    store = store,
+                    onSend = { text ->
+                        scope.launch {
+                            val err = if (store.onlineEnabled) store.sendChatOnline(text)
+                            else store.sendChat(text)
+                            if (err != null) toast = err
+                        }
+                    },
+                    onRefresh = {
+                        scope.launch {
+                            if (store.onlineEnabled) {
+                                val err = store.loadChatOnline()
+                                toast = err ?: "Чат обновлён"
+                            } else toast = "Локальный чат"
+                        }
+                    }
                 )
                 2 -> ApplicationsTab(
                     store = store,
@@ -319,6 +348,7 @@ private fun CountriesTab(
     onLeave: () -> Unit,
     onOpenMap: () -> Unit,
     onOpenApps: () -> Unit,
+    onOpenChat: () -> Unit,
 ) {
     val p = store.profile
     val applications = store.state.applications
@@ -359,17 +389,27 @@ private fun CountriesTab(
                     shape = RoundedCornerShape(50),
                     colors = ButtonDefaults.buttonColors(containerColor = LeafDeep)
                 ) { Text("К карте", fontSize = 14.sp) }
+                Button(
+                    onClick = onOpenChat,
+                    modifier = Modifier.weight(1f).height(44.dp),
+                    shape = RoundedCornerShape(50),
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF5C8DBC))
+                ) { Text("💬 Чат", fontSize = 14.sp) }
+            }
+            Spacer(Modifier.height(4.dp))
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
                 if (p.isLeader) {
-                    Button(
-                        onClick = onOpenApps,
-                        modifier = Modifier.weight(1f).height(44.dp),
-                        shape = RoundedCornerShape(50),
-                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF5C8DBC))
-                    ) {
-                        Text("Заявки ${if (applications.isNotEmpty()) "(${applications.size})" else ""}", fontSize = 13.sp)
+                    TextButton(onClick = onOpenApps, contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 4.dp)) {
+                        Text("Заявки ${if (applications.isNotEmpty()) "(${applications.size})" else ""}", fontSize = 12.sp, color = LeafDeep)
                     }
+                } else Spacer(Modifier.size(1.dp))
+                TextButton(onClick = onLeave, contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 4.dp)) {
+                    Text("Выйти", color = InkSoft, fontSize = 12.sp)
                 }
-                TextButton(onClick = onLeave) { Text("Выйти", color = InkSoft, fontSize = 12.sp) }
             }
         }
     } else {
@@ -509,6 +549,7 @@ private fun MapTab(
     selected: Region?,
     onSelect: (String) -> Unit,
     onCapture: (Region) -> Unit,
+    onDevelop: (Region) -> Unit,
     busy: Boolean,
     online: Boolean,
 ) {
@@ -522,8 +563,8 @@ private fun MapTab(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Column {
-                Text("Карта мира", fontWeight = FontWeight.Bold, fontSize = 17.sp, color = Ink)
-                Text("нажми на регион, чтобы посмотреть", fontSize = 11.sp, color = InkSoft)
+                Text("Карта садов", fontWeight = FontWeight.Bold, fontSize = 17.sp, color = Ink)
+                Text("территории закрашены цветом страны", fontSize = 11.sp, color = InkSoft)
             }
             Text(
                 if (online) "🌐 общая" else "🏠 локальная",
@@ -569,41 +610,76 @@ private fun MapTab(
             }
 
             store.state.regions.forEach { r ->
-                val sizeDp = 58.dp
-                val x = w * (r.x / 100f) - sizeDp / 2
-                val y = h * (r.y / 100f) - sizeDp / 2
-                val ownerColor = Color(parseColor(r.ownerColor, 0xFFCFE0B8))
+                // большая закрашенная территория — сразу видно, кому она принадлежит
+                val d = w * (r.r / 100f) * 2.35f
+                val x = w * (r.x / 100f) - d / 2
+                val y = h * (r.y / 100f) - d / 2
+                val ownerColor = Color(parseColor(r.ownerColor, 0xFFDCE9C5))
                 val isSelected = selected?.id == r.id
+                val mine = r.ownerId == store.profile.countryId
                 Box(
                     Modifier
                         .offset(x = x, y = y)
-                        .size(sizeDp)
+                        .size(d)
                         .clip(CircleShape)
-                        .background(if (r.ownerId != null) ownerColor else Color(0xE6F6F2E5))
+                        .background(
+                            if (r.ownerId == null) Color(0xE8F6F0DF) else ownerColor.copy(alpha = 0.94f)
+                        )
                         .border(
-                            width = if (isSelected) 3.dp else 1.dp,
-                            color = if (isSelected) Ink else Color(0x33000000),
+                            width = if (isSelected) 3.dp else if (mine) 2.dp else 1.dp,
+                            color = if (isSelected) Ink else if (mine) LeafDeep else Color(0x66000000),
                             shape = CircleShape
                         )
                         .clickable { onSelect(r.id) },
                     contentAlignment = Alignment.Center
                 ) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.Center
+                    ) {
                         Text(
-                            if (r.ownerId != null) "🚩" else "·",
-                            fontSize = 13.sp
+                            if (r.ownerId != null) "🚩" else r.bonus,
+                            fontSize = 15.sp
                         )
                         Text(
                             r.name.split(" ").first(),
-                            fontSize = 8.sp,
+                            fontSize = 9.sp,
                             color = Ink,
+                            fontWeight = FontWeight.SemiBold,
                             maxLines = 1,
                             textAlign = TextAlign.Center
+                        )
+                        Text(
+                            "ур.${r.level} ${r.bonus}" + if (r.progress > 0) " · ${r.progress}%" else "",
+                            fontSize = 8.sp,
+                            color = InkSoft,
+                            maxLines = 1
                         )
                     }
                 }
             }
         }
+    }
+
+    Spacer(Modifier.height(8.dp))
+    SoftCard {
+        Text("Как читать карту", fontWeight = FontWeight.SemiBold, fontSize = 13.sp, color = Ink)
+        Spacer(Modifier.height(6.dp))
+        MapLegend(
+            listOf(
+                "твоя земля" to LeafDeep,
+                "чужая" to Color(0xFF5C8DBC),
+                "ничейная" to Color(0xFFDCE9C5),
+            )
+        )
+        Spacer(Modifier.height(5.dp))
+        Text(
+            "🍎 яблоки · 🪙 монеты · ⚡ урожай · 🌿 рост — бонусы регионов. " +
+                "Захваченные земли приносят яблоки каждый секунду, их можно улучшать.",
+            fontSize = 10.sp,
+            color = InkSoft,
+            lineHeight = 14.sp
+        )
     }
 
     Spacer(Modifier.height(8.dp))
@@ -626,6 +702,12 @@ private fun MapTab(
                         fontSize = 11.sp,
                         color = InkSoft
                     )
+                    Text(
+                        "уровень ${selected.level} · бонус ${selected.bonus} ${selected.bonusName} " +
+                            "+${String.format("%.1f", selected.bonusPerSec)}/с",
+                        fontSize = 10.sp,
+                        color = LeafDeep
+                    )
                 }
             }
             if (selected.progress > 0) {
@@ -638,7 +720,26 @@ private fun MapTab(
             if (country == null) {
                 Text("Сначала вступи в страну на вкладке «Страны».", fontSize = 12.sp, color = InkSoft)
             } else if (selected.ownerId == country.id) {
-                Text("Это уже твоя земля. Спокойно растёт вместе с тобой 🌿", fontSize = 12.sp, color = LeafDeep)
+                Text(
+                    "Твоя земля. Чем выше уровень, тем больше бонус 🌿",
+                    fontSize = 12.sp,
+                    color = LeafDeep
+                )
+                Spacer(Modifier.height(10.dp))
+                val devCost = store.developCost(selected)
+                Button(
+                    onClick = { onDevelop(selected) },
+                    enabled = selected.level < 10 && p.apples >= devCost && !busy,
+                    modifier = Modifier.fillMaxWidth().height(44.dp),
+                    shape = RoundedCornerShape(50),
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFC98A55))
+                ) {
+                    Text(
+                        if (selected.level >= 10) "Максимальный уровень"
+                        else "Улучшить · ${fmt(devCost)} 🍎",
+                        fontSize = 13.sp
+                    )
+                }
             } else {
                 val cost = store.captureCost(selected)
                 Button(
@@ -679,6 +780,100 @@ private fun MapTab(
                 Text("…и ещё ${store.state.regions.size - 6}", fontSize = 10.sp, color = InkSoft)
             }
         }
+    }
+}
+
+// ---------------- чат страны ----------------
+
+@Composable
+private fun ChatTab(
+    store: GameStore,
+    onSend: (String) -> Unit,
+    onRefresh: () -> Unit,
+) {
+    val p = store.profile
+    var text by remember { mutableStateOf("") }
+    val messages = store.state.chat.filter { it.countryId == p.countryId }
+
+    SoftCard(Modifier.padding(top = 6.dp)) {
+        Row(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column {
+                Text("Чат страны", fontWeight = FontWeight.Bold, fontSize = 17.sp, color = Ink)
+                Text(
+                    p.countryName?.let { "пишем в $it" } ?: "сначала вступи в страну",
+                    fontSize = 11.sp,
+                    color = InkSoft
+                )
+            }
+            TextButton(onClick = onRefresh) { Text("⟳", fontSize = 18.sp, color = LeafDeep) }
+        }
+    }
+
+    Spacer(Modifier.height(8.dp))
+
+    if (p.countryId == null) {
+        SoftCard {
+            Text(
+                "Чат доступен участникам страны. Открой вкладку «Страны» и вступи в одну из них.",
+                fontSize = 12.sp,
+                color = InkSoft
+            )
+        }
+        return
+    }
+
+    SoftCard {
+        if (messages.isEmpty()) {
+            Text(
+                "Пока тихо. Напиши первое сообщение — друзья увидят его, когда откроют чат.",
+                fontSize = 12.sp,
+                color = InkSoft
+            )
+        }
+        messages.takeLast(50).forEach { m ->
+            val mine = m.nickname == p.nickname
+            Column(
+                Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 4.dp)
+                    .clip(RoundedCornerShape(if (mine) 14.dp else 6.dp))
+                    .background(if (mine) Color(0xFFE4EED7) else Color(0xFFF3F0E6))
+                    .padding(horizontal = 10.dp, vertical = 7.dp),
+                horizontalAlignment = if (mine) Alignment.End else Alignment.Start
+            ) {
+                Text(m.nickname, fontSize = 10.sp, color = LeafDeep, fontWeight = FontWeight.SemiBold)
+                Text(m.text, fontSize = 13.sp, color = Ink)
+                Text(timeAgo(m.createdAt), fontSize = 9.sp, color = InkSoft)
+            }
+        }
+    }
+
+    Spacer(Modifier.height(8.dp))
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        OutlinedTextField(
+            value = text,
+            onValueChange = { text = it.take(300) },
+            placeholder = { Text("Сообщение…") },
+            modifier = Modifier.weight(1f),
+            singleLine = true,
+            shape = RoundedCornerShape(14.dp)
+        )
+        Spacer(Modifier.width(6.dp))
+        Button(
+            onClick = {
+                if (text.isNotBlank()) {
+                    onSend(text.trim())
+                    text = ""
+                }
+            },
+            modifier = Modifier.height(52.dp),
+            shape = RoundedCornerShape(50),
+            colors = ButtonDefaults.buttonColors(containerColor = LeafDeep)
+        ) { Text("➤") }
     }
 }
 
