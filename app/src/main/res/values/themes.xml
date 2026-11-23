@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.AppleTree" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:statusBarColor">#8FD3FF</item>
+        <item name="android:navigationBarColor">#F3F7F2</item>
+        <item name="android:windowBackground">#8FD3FF</item>
+    </style>
+</resources>
