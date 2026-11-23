@@ -1,0 +1,13 @@
+{
+  "name": "appletree-server",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Общий мир для игры AppleTree: страны, заявки, карта",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
