@@ -25,10 +25,12 @@ class GameStore(private val context: Context) {
         get() = prefs.getString("session", null)
 
     var serverUrl: String
-        get() = prefs.getString("serverUrl", "") ?: ""
+        get() = prefs.getString("serverUrl", AppConfig.SUPABASE_URL) ?: AppConfig.SUPABASE_URL
         set(value) {
             prefs.edit().putString("serverUrl", value.trim().trimEnd('/')).apply()
         }
+
+    private fun api(): Backend = backendFor(serverUrl)
 
     val profile: Profile get() = state.profile
 
@@ -156,6 +158,29 @@ class GameStore(private val context: Context) {
             return false
         }
         loadAccount(acc)
+        return true
+    }
+
+    /**
+     * Вход на новом телефоне: сервер уже проверил пароль, создаём локальный профиль.
+     */
+    fun adoptServerAccount(nickname: String): Boolean {
+        val nick = nickname.trim()
+        if (nick.isEmpty()) return false
+        val st = GameState(regions = defaultRegions())
+        seedCountries(st)
+        val shared = load()
+        if (shared.countries.isNotEmpty()) st.countries = shared.countries
+        if (shared.regions.isNotEmpty()) st.regions = shared.regions
+        st.leaderboard = shared.leaderboard
+        st.profile = Profile(
+            nickname = nick,
+            tutorialDone = true,
+            lastSeen = System.currentTimeMillis(),
+        )
+        state = st
+        prefs.edit().putString("session", nick).apply()
+        save()
         return true
     }
 
@@ -467,7 +492,7 @@ class GameStore(private val context: Context) {
         val token = profile.serverToken ?: return "Нужно войти по сети"
         if (serverUrl.isBlank()) return "Адрес сервера не задан"
         return try {
-            val world = ApiClient(serverUrl).world(token)
+            val world = api().world(token)
             if (world.countries.isNotEmpty() || world.regions.isNotEmpty()) {
                 state.countries = world.countries.toMutableList()
                 if (world.regions.isNotEmpty()) state.regions = world.regions.toMutableList()
@@ -494,7 +519,7 @@ class GameStore(private val context: Context) {
             return "Страна с таким названием уже есть"
         return try {
             profile.coins -= 100
-            ApiClient(serverUrl).createCountry(token, name.trim(), color, emblem)
+            api().createCountry(token, name.trim(), color, emblem)
             refreshWorld()
         } catch (e: Exception) {
             profile.coins += 100
@@ -505,7 +530,7 @@ class GameStore(private val context: Context) {
     suspend fun applyOnline(countryId: String): String? {
         val token = profile.serverToken ?: return "Нужно войти по сети"
         return try {
-            ApiClient(serverUrl).apply(token, countryId)
+            api().apply(token, countryId)
             refreshWorld()
         } catch (e: Exception) {
             e.message ?: "Не удалось отправить заявку"
@@ -514,7 +539,7 @@ class GameStore(private val context: Context) {
 
     suspend fun acceptOnline(appId: String): String? = try {
         val token = profile.serverToken ?: return "Нужно войти по сети"
-        ApiClient(serverUrl).acceptApplication(token, appId)
+        api().acceptApplication(token, appId)
         refreshWorld()
     } catch (e: Exception) {
         e.message ?: "Ошибка"
@@ -522,7 +547,7 @@ class GameStore(private val context: Context) {
 
     suspend fun declineOnline(appId: String): String? = try {
         val token = profile.serverToken ?: return "Нужно войти по сети"
-        ApiClient(serverUrl).declineApplication(token, appId)
+        api().declineApplication(token, appId)
         refreshWorld()
     } catch (e: Exception) {
         e.message ?: "Ошибка"
@@ -530,7 +555,7 @@ class GameStore(private val context: Context) {
 
     suspend fun leaveOnline(): String? = try {
         val token = profile.serverToken ?: return "Нужно войти по сети"
-        ApiClient(serverUrl).leaveCountry(token)
+        api().leaveCountry(token)
         refreshWorld()
     } catch (e: Exception) {
         e.message ?: "Ошибка"
@@ -547,7 +572,7 @@ class GameStore(private val context: Context) {
         return try {
             profile.apples -= cost
             profile.captured++
-            val r = ApiClient(serverUrl).capture(token, regionId, cost)
+            val r = api().capture(token, regionId, cost)
             refreshWorld()
             if (r.optBoolean("captured")) {
                 CaptureResult(true, r.optString("message", "Регион захвачен!"))
@@ -564,7 +589,7 @@ class GameStore(private val context: Context) {
     suspend fun pushProgressOnline() {
         val token = profile.serverToken ?: return
         if (serverUrl.isBlank()) return
-        runCatching { ApiClient(serverUrl).pushScore(token, profile.totalApples, profile.captured) }
+        runCatching { api().pushScore(token, profile.totalApples, profile.captured) }
     }
 
     fun tick(seconds: Int = 1) {

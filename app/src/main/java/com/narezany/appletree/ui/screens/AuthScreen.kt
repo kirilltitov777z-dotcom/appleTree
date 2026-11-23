@@ -45,7 +45,7 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.narezany.appletree.data.ApiClient
+import com.narezany.appletree.data.backendFor
 import com.narezany.appletree.data.GameStore
 import com.narezany.appletree.ui.components.drawMiniAppleTree
 import com.narezany.appletree.ui.theme.CardCream
@@ -92,9 +92,9 @@ fun AuthScreen(store: GameStore, onAuthed: () -> Unit) {
                 store.serverUrl = serverUrl
                 try {
                     val res = if (registerMode) {
-                        ApiClient(serverUrl).register(nickname.trim(), password)
+                        backendFor(serverUrl).register(nickname.trim(), password)
                     } else {
-                        ApiClient(serverUrl).login(nickname.trim(), password)
+                        backendFor(serverUrl).login(nickname.trim(), password)
                     }
                     serverToken = res.token
                     serverNick = res.nickname
@@ -107,7 +107,13 @@ fun AuthScreen(store: GameStore, onAuthed: () -> Unit) {
             val ok = if (registerMode) {
                 store.register(nickname.trim(), password) { error = it }
             } else {
-                store.login(nickname.trim(), password) { error = it }
+                var success = store.login(nickname.trim(), password) { error = it }
+                if (!success && serverToken != null) {
+                    // новый телефон: сервер пароль уже проверил
+                    success = store.adoptServerAccount(nickname.trim())
+                    if (success) error = null
+                }
+                success
             }
             if (ok) {
                 if (serverToken != null) store.attachServer(serverToken, serverNick ?: nickname.trim())

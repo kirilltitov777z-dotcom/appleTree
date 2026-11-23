@@ -167,7 +167,7 @@ fun ProfileScreen(store: GameStore, onLogout: () -> Unit) {
                         store.serverUrl = serverUrl
                         scope.launch {
                             checking = true
-                            val ok = com.narezany.appletree.data.ApiClient(serverUrl).ping()
+                            val ok = com.narezany.appletree.data.backendFor(serverUrl).ping()
                             checking = false
                             msg = if (ok) "Сервер на связи ✓" else "Сервер не отвечает"
                         }

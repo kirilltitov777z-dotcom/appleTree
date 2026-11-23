@@ -2,7 +2,6 @@ package com.narezany.appletree.data
 
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import org.json.JSONArray
 import org.json.JSONObject
 import java.io.BufferedReader
 import java.io.InputStreamReader
@@ -10,17 +9,15 @@ import java.net.HttpURLConnection
 import java.net.URL
 
 /**
- * Простой клиент к серверу AppleTree (папка server/).
+ * Клиент к своему Node-серверу (папка server/).
  * Работает без сторонних библиотек: HttpURLConnection + org.json.
  */
-class ApiClient(private val baseUrl: String) {
+class ApiClient(private val baseUrl: String) : Backend {
 
     private fun requireUrl(): String {
         if (baseUrl.isBlank()) throw ApiException("Адрес сервера не задан")
         return baseUrl.trimEnd('/')
     }
-
-    class ApiException(message: String) : Exception(message)
 
     private fun request(
         method: String,
@@ -65,39 +62,30 @@ class ApiClient(private val baseUrl: String) {
         }
     }
 
-    suspend fun ping(): Boolean = withContext(Dispatchers.IO) {
+    override suspend fun ping(): Boolean = withContext(Dispatchers.IO) {
         runCatching { request("GET", "/api/ping", timeoutMs = 6000).optBoolean("ok") }
             .getOrDefault(false)
     }
 
-    data class AuthResult(val token: String, val nickname: String)
+    override suspend fun register(nickname: String, password: String): AuthResult =
+        withContext(Dispatchers.IO) {
+            val r = request(
+                "POST", "/api/register",
+                JSONObject().put("nickname", nickname).put("password", password)
+            )
+            AuthResult(r.getString("token"), r.optString("nickname", nickname))
+        }
 
-    suspend fun register(nickname: String, password: String): AuthResult = withContext(Dispatchers.IO) {
-        val r = request(
-            "POST", "/api/register",
-            JSONObject().put("nickname", nickname).put("password", password)
-        )
-        AuthResult(r.getString("token"), r.optString("nickname", nickname))
-    }
+    override suspend fun login(nickname: String, password: String): AuthResult =
+        withContext(Dispatchers.IO) {
+            val r = request(
+                "POST", "/api/login",
+                JSONObject().put("nickname", nickname).put("password", password)
+            )
+            AuthResult(r.getString("token"), r.optString("nickname", nickname))
+        }
 
-    suspend fun login(nickname: String, password: String): AuthResult = withContext(Dispatchers.IO) {
-        val r = request(
-            "POST", "/api/login",
-            JSONObject().put("nickname", nickname).put("password", password)
-        )
-        AuthResult(r.getString("token"), r.optString("nickname", nickname))
-    }
-
-    data class World(
-        val countries: List<Country>,
-        val regions: List<Region>,
-        val applications: List<Application>,
-        val leaderboard: List<Country>,
-        val meCountryId: String?,
-        val meIsLeader: Boolean,
-    )
-
-    suspend fun world(token: String): World = withContext(Dispatchers.IO) {
+    override suspend fun world(token: String): World = withContext(Dispatchers.IO) {
         val r = request("GET", "/api/world", token = token)
         val countries = mutableListOf<Country>()
         r.optJSONArray("countries")?.let { arr ->
@@ -134,7 +122,7 @@ class ApiClient(private val baseUrl: String) {
         )
     }
 
-    suspend fun createCountry(
+    override suspend fun createCountry(
         token: String, name: String, color: String, emblem: String
     ): Country = withContext(Dispatchers.IO) {
         val r = request(
@@ -144,37 +132,37 @@ class ApiClient(private val baseUrl: String) {
         Country.fromJson(r.getJSONObject("country"))
     }
 
-    suspend fun apply(token: String, countryId: String) = withContext(Dispatchers.IO) {
+    override suspend fun apply(token: String, countryId: String) = withContext(Dispatchers.IO) {
         request("POST", "/api/countries/$countryId/join", JSONObject(), token)
         Unit
     }
 
-    suspend fun acceptApplication(token: String, id: String) = withContext(Dispatchers.IO) {
+    override suspend fun acceptApplication(token: String, id: String) = withContext(Dispatchers.IO) {
         request("POST", "/api/applications/$id/accept", JSONObject(), token)
         Unit
     }
 
-    suspend fun declineApplication(token: String, id: String) = withContext(Dispatchers.IO) {
+    override suspend fun declineApplication(token: String, id: String) = withContext(Dispatchers.IO) {
         request("POST", "/api/applications/$id/decline", JSONObject(), token)
         Unit
     }
 
-    suspend fun leaveCountry(token: String) = withContext(Dispatchers.IO) {
+    override suspend fun leaveCountry(token: String) = withContext(Dispatchers.IO) {
         request("POST", "/api/leave", JSONObject(), token)
         Unit
     }
 
-    suspend fun capture(token: String, regionId: String, amount: Long): JSONObject =
+    override suspend fun capture(token: String, regionId: String, amount: Long): JSONObject =
         withContext(Dispatchers.IO) {
             request("POST", "/api/capture", JSONObject().put("regionId", regionId).put("amount", amount), token)
         }
 
-    suspend fun pushScore(token: String, score: Long, captured: Int) = withContext(Dispatchers.IO) {
+    override suspend fun pushScore(token: String, score: Long, captured: Int) = withContext(Dispatchers.IO) {
         request("POST", "/api/progress", JSONObject().put("score", score).put("captured", captured), token)
         Unit
     }
 
-    suspend fun leaderboard(token: String?): List<Country> = withContext(Dispatchers.IO) {
+    override suspend fun leaderboard(token: String?): List<Country> = withContext(Dispatchers.IO) {
         val r = request("GET", "/api/leaderboard", token = token)
         val out = mutableListOf<Country>()
         r.optJSONArray("leaderboard")?.let { arr ->
